@@ -8,16 +8,32 @@
 import Foundation
 import CoreBluetooth
 
+private struct Constants {
+
+}
+
 protocol BLEManagerDelegate: AnyObject {
+    func didConnect()
+    func didDisonnect()
     func didUpdateValue(_ value: Data)
 }
 
-final class BLEManager: NSObject {
+protocol BLEManager {
+    var delegate: BLEManagerDelegate? { get set }
+    func startScan()
+    func connect(peripheral: CBPeripheral)
+    func readValue(characteristic: CBCharacteristic)
+    func write(value: Data, characteristic: CBCharacteristic)
+    func _testWrite(value: Data)
+    func disconnect()
+}
+
+final class BLEManagerImpl: NSObject {
 
     private let centralManager: CBCentralManager
     private var discoveredPeripherals: [CBPeripheral] = []
     private var connectedPeripheral: CBPeripheral?
-    private var characteristics: [CBCharacteristic] = []
+    var characteristics: [CBCharacteristic] = []
     var delegate: BLEManagerDelegate?
 
     init(centralManager: CBCentralManager = CBCentralManager()) {
@@ -25,6 +41,9 @@ final class BLEManager: NSObject {
         super.init()
         centralManager.delegate = self
     }
+}
+
+extension BLEManagerImpl: BLEManager {
 
     func startScan() {
         log(message: "Scanning started", type: .info)
@@ -35,26 +54,18 @@ final class BLEManager: NSObject {
         centralManager.connect(peripheral, options: nil)
     }
 
-    func discoverServices(peripheral: CBPeripheral) {
-        peripheral.discoverServices(nil)
-    }
-
-    func discoverCharacteristics(peripheral: CBPeripheral) {
-        guard let services = peripheral.services else {
-            return
-        }
-
-        for service in services {
-            peripheral.discoverCharacteristics(nil, for: service)
-        }
-    }
-
     func readValue(characteristic: CBCharacteristic) {
         connectedPeripheral?.readValue(for: characteristic)
     }
 
     func write(value: Data, characteristic: CBCharacteristic) {
         connectedPeripheral?.writeValue(value, for: characteristic, type: .withResponse)
+    }
+
+    func _testWrite(value: Data) {
+        log(message: "_testWrite: \(value)", type: .info)
+        guard let testCharacteristic = characteristics.first(where: { $0.properties.contains(.write) }) else { return }
+        connectedPeripheral?.writeValue(value, for: testCharacteristic, type: .withResponse)
     }
 
     func disconnect() {
@@ -65,7 +76,24 @@ final class BLEManager: NSObject {
     }
 }
 
-extension BLEManager: CBCentralManagerDelegate {
+private extension BLEManagerImpl {
+
+    private func discoverServices(peripheral: CBPeripheral) {
+        peripheral.discoverServices(nil)
+    }
+
+    private func discoverCharacteristics(peripheral: CBPeripheral) {
+        guard let services = peripheral.services else {
+            return
+        }
+
+        for service in services {
+            peripheral.discoverCharacteristics(nil, for: service)
+        }
+    }
+}
+
+extension BLEManagerImpl: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         log(message: "didDiscoverPeripheral - name: \(peripheral.name ?? "Unknown")", type: .info)
@@ -76,9 +104,12 @@ extension BLEManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        log(message: "didConnect", type: .info)
+        log(message: "didConnect - name: \(peripheral.name ?? "Unknown")", type: .info)
         connectedPeripheral = peripheral
         peripheral.delegate = self
+        delegate?.didConnect()
+        centralManager.stopScan()
+        discoverServices(peripheral: peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -100,7 +131,7 @@ extension BLEManager: CBCentralManagerDelegate {
         case .poweredOff:
             break
         case .poweredOn:
-            startScan()
+            break
         @unknown default:
             break
         }
@@ -111,10 +142,11 @@ extension BLEManager: CBCentralManagerDelegate {
             log(error: error)
             return
         }
+        delegate?.didDisonnect()
     }
 }
 
-extension BLEManager: CBPeripheralDelegate {
+extension BLEManagerImpl: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let services = peripheral.services else {
@@ -140,10 +172,12 @@ extension BLEManager: CBPeripheralDelegate {
         guard let value = characteristic.value else {
             return
         }
+        log(message: "didUpdateValue: \(value)", type: .info)
         delegate?.didUpdateValue(value)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        log(message: "didWrite", type: .info)
         if let error = error  {
             log(error: error)
             return
@@ -151,6 +185,6 @@ extension BLEManager: CBPeripheralDelegate {
     }
 }
 
-extension BLEManager {
+extension BLEManagerImpl {
     struct FailedToConnectError: Error {}
 }

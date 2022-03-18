@@ -1,19 +1,33 @@
 import Foundation
 
 public class SliderBluetoothSDK {
-    let manager: BLEManager
+    private let bleManager: BLEManager
+    public let slider: Slider
+    var isConnected = false
 
     public init() {
-        manager = BLEManager()
+        bleManager = BLEManagerImpl()
+        slider = SliderImpl(bleManager: bleManager)
     }
 
     public func start() {
-        manager.startScan()
+        bleManager.startScan()
     }
 
+    public func write(value: Data) {
+        bleManager._testWrite(value: value)
+    }
 }
 
 extension SliderBluetoothSDK: BLEManagerDelegate {
+
+    func didConnect() {
+        isConnected = true
+    }
+
+    func didDisonnect() {
+        isConnected = false
+    }
 
     func didUpdateValue(_ value: Data) {
         log(message: "Did update value: \(value)", type: .info)
