@@ -9,59 +9,40 @@ import Foundation
 import UIKit
 
 public protocol Slider {
-    func move(value: Int16, axis: Axis)
+    func move(_ value: Int16, axis: Axis)
+    func changePosition(_ position: Position)
 }
 
-enum Instructions: UInt8 {
-    case move = 0
+final class SliderImpl: Slider {
 
-    var data: Data {
-        self.rawValue.data
-    }
-}
+    let bleService: BLEService
 
-class SliderImpl: Slider {
-
-    let bleManager: BLEManager
-
-    init(bleManager: BLEManager) {
-        self.bleManager = bleManager
+    init(bleService: BLEService) {
+        self.bleService = bleService
     }
 
-    func move(value: Int16, axis: Axis) {
-        let instruction: Instructions = .move
-        print(#function, value, axis)
-        let data = instruction.data + value.data
-        data.print()
-        bleManager._testWrite(value: data)
-    }
-}
-
-public enum Axis {
-    case slide
-    case pan
-    case tilt
-}
-
-extension Int16 {
-    var data: Data {
-        var int = self
-        return Data(bytes: &int, count: MemoryLayout<Self>.size)
-    }
-}
-
-extension UInt8 {
-    var data: Data {
-        var int = self
-        return Data(bytes: &int, count: MemoryLayout<Self>.size)
-    }
-}
-
-extension Data {
-    func print() {
-        forEach {
-            Swift.print(String($0, radix: 2))
+    func move(_ value: Int16, axis: Axis) {
+        let instruction: Instruction
+        switch axis {
+        case .slide:
+            instruction = .moveSlide
+        case .pan:
+            instruction = .movePan
+        case .tilt:
+            instruction = .moveTilt
         }
+
+        log(message: "Move \(axis): \(value)", type: .instruction)
+        let data = instruction.data + value.data
+        bleService.write(value: data)
+    }
+
+    func changePosition(_ position: Position) {
+        let instruction: Instruction = .changePosition
+        let data = instruction.data + position.slide.data + position.pan.data + position.tilt.data
+        log(message: "Change position: \(position.description)", type: .instruction)
+        bleService.write(value: data)
     }
 }
+
 
